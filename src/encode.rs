@@ -57,11 +57,16 @@ fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes
 			deps.insert(item);
 
 			for field in fields {
+				// check if this field is an array type
+				let field_type = if let Some(index) = field.type_.find('[') {
+					&field.type_[..index]
+				} else {
+					&field.type_
+				};
 				// seen this type before? or not a custom type skip
-				if deps.contains(&*field.type_) || !message_types.contains_key(&*field.type_) {
-					continue;
+				if !deps.contains(field_type) || message_types.contains_key(field_type) {
+					types.insert(field_type);
 				}
-				types.insert(&*field.type_);
 			}
 		}
 	};
