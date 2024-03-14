@@ -83,7 +83,7 @@ fn encode_type(message_type: &str, message_types: &MessageTypes) -> Result<Strin
 		temp.insert(0, message_type);
 		temp
 	};
-
+	println!("Encode type {:?}, dependencies {:?}", message_type, deps);
 	let encoded = deps
 		.into_iter()
 		.filter_map(|dep| {
@@ -97,10 +97,12 @@ fn encode_type(message_type: &str, message_types: &MessageTypes) -> Result<Strin
 		})
 		.collect::<Vec<_>>()
 		.concat();
+	println!("Encode type {:?}, type string {:?}", message_type, encoded);
 	Ok(encoded)
 }
 
 fn type_hash(message_type: &str, typed_data: &MessageTypes) -> Result<H256> {
+	println!("Type hash {:?}, {:?}", message_type, keccak(encode_type(message_type, typed_data)?));
 	Ok(keccak(encode_type(message_type, typed_data)?))
 }
 
@@ -112,6 +114,7 @@ fn encode_data(
 	field_name: Option<&str>
 ) -> Result<Vec<u8>>
 {
+	println!("Encode data, type: {:?}, value: {:?}, field: {:?}", message_type, value, field_name);
 	let encoded = match message_type {
 		Type::Array {
 			inner,
@@ -132,6 +135,8 @@ fn encode_data(
 				items.append(&mut encoded);
 			}
 
+			println!("+Encode data {:?} array type, bytes: {:?}, hash: {:?}", inner, items.clone(), keccak(items.clone()));
+
 			keccak(items).to_vec()
 		}
 
@@ -146,6 +151,8 @@ fn encode_data(
 				tokens.append(&mut encoded);
 			}
 
+			println!("+Encode data struct type {:?}, bytes: {:?}, hash: {:?}", ident, tokens.clone(), keccak(tokens.clone()));
+
 			keccak(tokens).to_vec()
 		}
 
@@ -157,9 +164,13 @@ fn encode_data(
 			let bytes = (&string[2..])
 				.from_hex::<Vec<u8>>()
 				.map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
-			let bytes = keccak(&bytes).to_vec();
+			let hash = keccak(&bytes).to_vec();
 
-			encode(&[EthAbiToken::FixedBytes(bytes)])
+			let ret = encode(&[EthAbiToken::FixedBytes(hash.clone())]);
+
+			println!("+Encode bytes bytes: {:?}, hash: {:?}, fixed bytes: {:?}", bytes, hash.clone(), ret);
+
+			ret
 		}
 
 		Type::Byte(_) => {
@@ -171,13 +182,19 @@ fn encode_data(
 				.from_hex::<Vec<u8>>()
 				.map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
 
-			encode(&[EthAbiToken::FixedBytes(bytes)])
+			let ret = encode(&[EthAbiToken::FixedBytes(bytes.clone())]);
+
+			println!("+Encode byte: {:?}, bytes: {:?}, fixed bytes: {:?}", string, bytes.clone(), ret.clone());
+
+			ret
 		}
 
 		Type::String => {
 			let value = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
 			let hash = keccak(value).to_vec();
-			encode(&[EthAbiToken::FixedBytes(hash)])
+			let ret = encode(&[EthAbiToken::FixedBytes(hash.clone())]);
+			println!("+Encode string: {:?}, hash: {:?}, fixed bytes: {:?}", value, hash, ret);
+			ret
 		}
 
 		Type::Bool => encode(&[EthAbiToken::Bool(value.as_bool().ok_or_else(|| serde_error("bool", field_name))?)]),
@@ -188,7 +205,9 @@ fn encode_data(
 				return Err(ErrorKind::InvalidAddressLength(addr.len()))?;
 			}
 			let address = EthAddress::from_str(&addr[2..]).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
-			encode(&[EthAbiToken::Address(address)])
+			let ret = encode(&[EthAbiToken::Address(address)]);
+			println!("+Encode address: {:?}, address: {:?}, encoded: {:?}", addr, address, ret);
+			ret
 		}
 
 		Type::Uint | Type::Int => {
@@ -203,7 +222,9 @@ fn encode_data(
 			} else {
 				EthAbiToken::Int(uint)
 			};
-			encode(&[token])
+			let ret = encode(&[token.clone()]);
+			println!("+Encode uint/int: {:?}, value: {:?}, token: {:?}, encoded: {:?}", string, uint, token, ret);
+			ret
 		}
 
 		_ => return Err(ErrorKind::UnknownType(format!("{}", field_name.unwrap_or("")), format!("{}", *message_type)))?
