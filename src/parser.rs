@@ -81,6 +81,7 @@ impl Parser {
 
 	/// the type string is being validated before it's parsed.
 	pub fn parse_type(&self, field_type: &str) -> Result<Type> {
+		println!("parse_type, type:{:?}", field_type);
 		#[derive(PartialEq)]
 		enum State { Open, Close }
 
@@ -140,6 +141,7 @@ impl Parser {
 			token = Some(type_);
 			lexer.consume();
 		}
+		println!("parse_type, type:{:?} result: {:?}", field_type, token);
 
 		Ok(token.ok_or_else(|| ErrorKind::NonExistentType)?)
 	}

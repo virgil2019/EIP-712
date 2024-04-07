@@ -75,6 +75,7 @@ fn build_dependencies<'a>(message_type: &'a str, message_types: &'a MessageTypes
 }
 
 fn encode_type(message_type: &str, message_types: &MessageTypes) -> Result<String> {
+	println!("encode_type, type:{:?}", message_type);
 	let deps = {
 		let mut temp = build_dependencies(message_type, message_types).ok_or_else(|| ErrorKind::NonExistentType)?;
 		temp.remove(message_type);
@@ -97,11 +98,15 @@ fn encode_type(message_type: &str, message_types: &MessageTypes) -> Result<Strin
 		})
 		.collect::<Vec<_>>()
 		.concat();
+	println!("encode_type, type:{:?}, encoded:{:?}", message_type, encoded.clone());
 	Ok(encoded)
 }
 
 fn type_hash(message_type: &str, typed_data: &MessageTypes) -> Result<H256> {
-	Ok(keccak(encode_type(message_type, typed_data)?))
+	println!("type_hash, type:{:?}", message_type);
+	let data = encode_type(message_type, typed_data)?;
+	println!("type_hash result, type:{:?}, data:{:?}, hash:{:?}", message_type, data.clone(), keccak(data.clone()).to_vec());
+	Ok(keccak(data))
 }
 
 fn encode_data(
@@ -112,6 +117,7 @@ fn encode_data(
 	field_name: Option<&str>
 ) -> Result<Vec<u8>>
 {
+	println!("encode_data, {:?}", field_name);
 	let encoded = match message_type {
 		Type::Array {
 			inner,
@@ -119,6 +125,7 @@ fn encode_data(
 		} => {
 			let mut items = vec![];
 			let values = value.as_array().ok_or_else(|| serde_error("array", field_name))?;
+			println!("encode_data, Array type:{:?}", message_type);
 
 			// check if the type definition actually matches
 			// the length of items to be encoded
@@ -131,6 +138,7 @@ fn encode_data(
 				let mut encoded = encode_data(parser, &*inner, &message_types, item, field_name)?;
 				items.append(&mut encoded);
 			}
+			println!("encode_data, Array type result:{:?}, data:{:?}, hash:{:?}", message_type, items.clone(), keccak(items.clone()).to_vec());
 
 			keccak(items).to_vec()
 		}
@@ -138,6 +146,7 @@ fn encode_data(
 		Type::Custom(ref ident) if message_types.get(&*ident).is_some() => {
 			let type_hash = (&type_hash(ident, &message_types)?).to_vec();
 			let mut tokens = encode(&[EthAbiToken::FixedBytes(type_hash)]);
+			println!("encode_data, Custom type:{:?}", message_type);
 
 			for field in message_types.get(ident).expect("Already checked in match guard; qed") {
 				let value = &value[&field.name];
@@ -145,12 +154,14 @@ fn encode_data(
 				let mut encoded = encode_data(parser, &type_, &message_types, &value, Some(&*field.name))?;
 				tokens.append(&mut encoded);
 			}
+			println!("encode_data, Custom type result:{:?}, data:{:?}, hash:{:?}", message_type, tokens.clone(), keccak(tokens.clone()).to_vec());
 
 			keccak(tokens).to_vec()
 		}
 
 		Type::Bytes => {
 			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
+			println!("encode_data, bytes:{:?}", message_type);
 
 			check_hex(&string)?;
 
@@ -158,40 +169,48 @@ fn encode_data(
 				.from_hex::<Vec<u8>>()
 				.map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
 			let bytes = keccak(&bytes).to_vec();
+			println!("encode_data, bytes result:{:?}, hashed bytes data:{:?}, encoded:{:?}", message_type, bytes.clone(), encode(&[EthAbiToken::FixedBytes(bytes.clone())]));
 
 			encode(&[EthAbiToken::FixedBytes(bytes)])
 		}
 
 		Type::Byte(_) => {
 			let string = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
+			println!("encode_data, Byte:{:?}", message_type);
 
 			check_hex(&string)?;
 
 			let bytes = (&string[2..])
 				.from_hex::<Vec<u8>>()
 				.map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
+			println!("encode_data, Byte result:{:?}, bytes data:{:?}, encoded:{:?}", message_type, bytes.clone(), encode(&[EthAbiToken::FixedBytes(bytes.clone())]));
 
 			encode(&[EthAbiToken::FixedBytes(bytes)])
 		}
 
 		Type::String => {
+			println!("encode_data, String:{:?}", message_type);
 			let value = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
 			let hash = keccak(value).to_vec();
+			println!("encode_data, String result:{:?}, hashed data:{:?}, encoded:{:?}", message_type, hash.clone(), encode(&[EthAbiToken::FixedBytes(hash.clone())]));
 			encode(&[EthAbiToken::FixedBytes(hash)])
 		}
 
 		Type::Bool => encode(&[EthAbiToken::Bool(value.as_bool().ok_or_else(|| serde_error("bool", field_name))?)]),
 
 		Type::Address => {
+			println!("encode_data, Address:{:?}", message_type);
 			let addr = value.as_str().ok_or_else(|| serde_error("string", field_name))?;
 			if addr.len() != 42 {
 				return Err(ErrorKind::InvalidAddressLength(addr.len()))?;
 			}
 			let address = EthAddress::from_str(&addr[2..]).map_err(|err| ErrorKind::HexParseError(format!("{}", err)))?;
+			println!("encode_data, Address result:{:?}, address data:{:?}, encoded:{:?}", message_type, address.clone(), encode(&[EthAbiToken::Address(address.clone())]));
 			encode(&[EthAbiToken::Address(address)])
 		}
 
 		Type::Uint | Type::Int => {
+			println!("encode_data, Uint/Int:{:?}", message_type);
 			let string = value.as_str().ok_or_else(|| serde_error("int/uint", field_name))?;
 
 			check_hex(&string)?;
@@ -203,6 +222,7 @@ fn encode_data(
 			} else {
 				EthAbiToken::Int(uint)
 			};
+			println!("encode_data, Uint/Int result:{:?}, token:{:?}, encoded:{:?}", message_type, token.clone(), encode(&[token.clone()]));
 			encode(&[token])
 		}
 
@@ -218,13 +238,17 @@ pub fn hash_structured_data(typed_data: EIP712) -> Result<H256> {
 	typed_data.validate()?;
 	// EIP-191 compliant
 	let prefix = (b"\x19\x01").to_vec();
+	println!("prefix:{:?}", prefix);
 	let domain = to_value(&typed_data.domain).unwrap();
 	let parser = Parser::new();
 	let (domain_hash, data_hash) = (
 		encode_data(&parser, &Type::Custom("EIP712Domain".into()), &typed_data.types, &domain, None)?,
 		encode_data(&parser, &Type::Custom(typed_data.primary_type), &typed_data.types, &typed_data.message, None)?
 	);
+	println!("domain_hash:{:?}", domain_hash);
+	println!("data_hash:{:?}", data_hash);
 	let concat = [&prefix[..], &domain_hash[..], &data_hash[..]].concat();
+	println!("result:{:?}", concat);
 	Ok(keccak(concat))
 }
 
